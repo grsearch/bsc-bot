@@ -1,8 +1,6 @@
 // ============================================================
-// Price Monitor — Birdeye API (v2)
-// B-05: 100 rps, 50M CUs/month
-// FIX: getPrice 现在返回 { price, fdv } (使用 token_overview)
-//      多持仓时使用 batch 端点减少请求数
+// Price Monitor — Birdeye API (v3)
+// 变更: cacheTTL 改为 4000ms 配合 5 秒轮询间隔
 // ============================================================
 
 const { logger } = require("./logger");
@@ -12,13 +10,9 @@ class PriceMonitor {
     this.apiKey = config.BIRDEYE_API_KEY;
     this.base = "https://public-api.birdeye.so";
     this.cache = new Map();
-    this.cacheTTL = 800; // ms
+    this.cacheTTL = 4000; // 4 秒缓存 (配合 5 秒轮询)
   }
 
-  /**
-   * 获取单个代币的 price + fdv
-   * 使用 token_overview 端点（一次请求拿到 price + fdv + liquidity）
-   */
   async getPrice(tokenAddress) {
     const cached = this.cache.get(tokenAddress);
     if (cached && Date.now() - cached.ts < this.cacheTTL) return cached.data;
@@ -26,12 +20,12 @@ class PriceMonitor {
     try {
       const r = await fetch(`${this.base}/defi/token_overview?address=${tokenAddress}`, {
         headers: { "X-API-KEY": this.apiKey, "x-chain": "bsc" },
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(5000),
       });
 
       if (r.status === 429) {
         logger.warn("Birdeye 429, backing off");
-        await this._sleep(1000);
+        await this._sleep(2000);
         return null;
       }
       if (!r.ok) return null;
@@ -54,10 +48,6 @@ class PriceMonitor {
     }
   }
 
-  /**
-   * 批量获取价格 (≤100 地址)
-   * 适用于多持仓场景，一次请求拿所有价格
-   */
   async getBatchPrices(addresses) {
     if (!addresses.length) return new Map();
     try {

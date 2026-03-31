@@ -1,7 +1,7 @@
 {
   "name": "four-meme-sniper",
-  "version": "1.0.0",
-  "description": "BSC Four.meme Migration Sniper Bot — auto buy/sell with trailing stop",
+  "version": "3.0.0",
+  "description": "BSC Four.meme Migration Sniper Bot — CZ/何一推文关联 + DeepSeek AI 评估",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -16,8 +16,6 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "ethers": "^6.13.4",
-    "ws": "^8.18.0",
-    "https-proxy-agent": "^7.0.6",
-    "node-fetch": "^3.3.2"
+    "ws": "^8.18.0"
   }
 }

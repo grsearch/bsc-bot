@@ -26,20 +26,17 @@ class TradeExecutor {
     this.router = new ethers.Contract(config.PANCAKE_ROUTER_V2, ROUTER_ABI, wallet);
   }
 
-  // ── 买入 ──
   async buy(tokenAddress, bnbAmount) {
     try {
       const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, this.wallet);
       const decimals = await tokenContract.decimals().catch(() => 18);
 
-      // ** FIX: 记录买入前余额，用差值算实际收到量 **
       const balanceBefore = await tokenContract.balanceOf(this.wallet.address).catch(() => 0n);
 
       const amountIn = ethers.parseEther(bnbAmount.toString());
       const path = [this.config.WBNB, tokenAddress];
       const deadline = Math.floor(Date.now() / 1000) + 300;
 
-      // 预估输出
       let expectedOut = 0n;
       try {
         const amounts = await this.router.getAmountsOut(amountIn, path);
@@ -48,7 +45,6 @@ class TradeExecutor {
         logger.warn("  getAmountsOut failed, using 0 minOut");
       }
 
-      // 滑点: SLIPPAGE_PERCENT=30 → 允许最多 30% 滑点
       const minOut = expectedOut * BigInt(100 - this.config.SLIPPAGE_PERCENT) / 100n;
 
       logger.info(`  BUY ${bnbAmount} BNB → ${tokenAddress.slice(0, 10)}...`);
@@ -67,7 +63,6 @@ class TradeExecutor {
       const receipt = await tx.wait();
       if (receipt.status === 0) return { success: false, error: "tx reverted" };
 
-      // ** FIX: 差值 = 实际收到的 token 数量 **
       const balanceAfter = await tokenContract.balanceOf(this.wallet.address);
       const received = balanceAfter - balanceBefore;
       const receivedFloat = parseFloat(ethers.formatUnits(received, decimals));
@@ -76,8 +71,8 @@ class TradeExecutor {
       return {
         success: true,
         txHash: tx.hash,
-        price,                      // BNB per token
-        tokenAmount: received,      // BigInt raw
+        price,
+        tokenAmount: received,
         decimals,
       };
     } catch (e) {
@@ -86,7 +81,6 @@ class TradeExecutor {
     }
   }
 
-  // ── 卖出（带重试）──
   async sell(tokenAddress, amount, retries = 2) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       const result = await this._sellOnce(tokenAddress, amount);
@@ -105,13 +99,11 @@ class TradeExecutor {
       const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, this.wallet);
       const decimals = await tokenContract.decimals().catch(() => 18);
 
-      // 用链上实际余额，不信任传入的 amount（可能过期）
       const balance = await tokenContract.balanceOf(this.wallet.address);
       const sellAmount = balance > 0n ? balance : (amount || 0n);
 
       if (sellAmount === 0n) return { success: false, error: "zero balance" };
 
-      // Approve
       const allowance = await tokenContract.allowance(this.wallet.address, this.config.PANCAKE_ROUTER_V2);
       if (allowance < sellAmount) {
         logger.info(`  Approving router...`);

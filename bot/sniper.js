@@ -41,7 +41,7 @@ class SniperBot extends EventEmitter {
 
     this.processedTokens = new Set();
     this.processedTxs = new Set();
-    this._reconnecting = false;          // 防止重连竞争
+    this._reconnecting = false;
     this._reconnectAttempts = 0;
     this._heartbeat = null;
     this._bnbPrice = 600;
@@ -59,7 +59,6 @@ class SniperBot extends EventEmitter {
     this._startHeartbeat();
   }
 
-  // ── 订阅 PairCreated 原始日志 ──
   _subscribe() {
     const filter = { address: PANCAKE_FACTORY, topics: [PAIR_CREATED_TOPIC] };
 
@@ -71,29 +70,25 @@ class SniperBot extends EventEmitter {
     logger.info("  ✓ Subscribed to PairCreated logs");
   }
 
-  // ── PairCreated 处理 ──
   async _onPairCreated(log) {
     const txHash = log.transactionHash;
     if (this.processedTxs.has(txHash)) return;
     this.processedTxs.add(txHash);
     this._trimSet(this.processedTxs, 5000);
 
-    // 解码 token0 / token1
     const token0 = ethers.getAddress("0x" + log.topics[1].slice(26));
     const token1 = ethers.getAddress("0x" + log.topics[2].slice(26));
     const [pairAddress] = ethers.AbiCoder.defaultAbiCoder()
       .decode(["address", "uint256"], log.data);
 
-    // 找出 meme token（另一个必须是 WBNB）
     const wl = WBNB.toLowerCase();
     let tokenAddr;
     if      (token0.toLowerCase() === wl) tokenAddr = token1;
     else if (token1.toLowerCase() === wl) tokenAddr = token0;
-    else return; // 不是 WBNB 对
+    else return;
 
     if (this.processedTokens.has(tokenAddr.toLowerCase())) return;
 
-    // ── 三重验证是否来自 Four.meme ──
     if (!(await this._verifyFourMeme(txHash, tokenAddr))) return;
 
     this.processedTokens.add(tokenAddr.toLowerCase());
@@ -108,14 +103,11 @@ class SniperBot extends EventEmitter {
     await this._processToken(tokenAddr, pairAddress);
   }
 
-  // ── 验证来源 ──
   async _verifyFourMeme(txHash, tokenAddr) {
     try {
-      // 1) tx.to == Four.meme ?
       const tx = await this.httpProvider.getTransaction(txHash);
       if (tx?.to?.toLowerCase() === FOUR_MEME.toLowerCase()) return true;
 
-      // 2) receipt 里有 Four.meme 的日志?
       const receipt = await this.httpProvider.getTransactionReceipt(txHash);
       if (receipt) {
         for (const l of receipt.logs) {
@@ -123,7 +115,6 @@ class SniperBot extends EventEmitter {
         }
       }
 
-      // 3) Four.meme 是否持有该 token?
       const tok = new ethers.Contract(tokenAddr, ERC20_ABI, this.httpProvider);
       const bal = await tok.balanceOf(FOUR_MEME).catch(() => 0n);
       if (bal > 0n) return true;
@@ -133,7 +124,6 @@ class SniperBot extends EventEmitter {
     return false;
   }
 
-  // ── 获取 token 信息后 emit ──
   async _processToken(tokenAddr, pairAddress) {
     const t0 = Date.now();
     try {
@@ -146,7 +136,7 @@ class SniperBot extends EventEmitter {
         tok.decimals().catch(() => 18),
       ]);
 
-      // 并行取 holders + LP/FDV
+      // 取 holders + LP/FDV (holders 仅用于展示，不做过滤)
       const [holders, { lp, fdv }] = await Promise.all([
         this._getHolders(tokenAddr),
         this._calcLpFdv(tokenAddr, pairAddress, totalSupply, decimals),
@@ -159,7 +149,6 @@ class SniperBot extends EventEmitter {
     }
   }
 
-  // ── Holders (Birdeye → BscScan) ──
   async _getHolders(addr) {
     try {
       const r = await fetch(
@@ -185,7 +174,6 @@ class SniperBot extends EventEmitter {
     return 0;
   }
 
-  // ── LP / FDV (链上 reserves → Birdeye fallback) ──
   async _calcLpFdv(tokenAddr, pairAddr, totalSupply, decimals) {
     if (pairAddr) {
       try {
@@ -234,7 +222,6 @@ class SniperBot extends EventEmitter {
     return this._bnbPrice;
   }
 
-  // ── 心跳 + 重连 ──
   _startHeartbeat() {
     this._heartbeat = setInterval(async () => {
       try {
@@ -250,7 +237,7 @@ class SniperBot extends EventEmitter {
   }
 
   async _reconnect() {
-    if (this._reconnecting) return;       // 防竞争
+    if (this._reconnecting) return;
     this._reconnecting = true;
 
     if (this._reconnectAttempts >= 10) {
